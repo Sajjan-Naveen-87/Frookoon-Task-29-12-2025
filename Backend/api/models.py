@@ -24,13 +24,21 @@ class Address(models.Model):
     def __str__(self):
         return f"Address for {self.user.username}"
 
+class Commission(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100)
+    percentage = models.DecimalField(max_digits=5, decimal_places=2)
+
+    def __str__(self):
+        return self.name
+
 class Vendor(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
     city = models.CharField(max_length=50)
     latitude = models.DecimalField(max_digits=10, decimal_places=7)
     longitude = models.DecimalField(max_digits=10, decimal_places=7)
-    commission_percentage = models.DecimalField(max_digits=5, decimal_places=2)
+    commission = models.ForeignKey(Commission, on_delete=models.SET_NULL, null=True, blank=True)
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
@@ -42,16 +50,23 @@ class Product(models.Model):
     name = models.CharField(max_length=150)
     category = models.CharField(max_length=50)
     price = models.DecimalField(max_digits=10, decimal_places=2)
-    stock_quantity = models.IntegerField()
     is_available = models.BooleanField(default=True)
-
-    class Meta:
-        constraints = [
-            CheckConstraint(condition=Q(stock_quantity__gte=0), name='stock_non_negative')
-        ]
 
     def __str__(self):
         return self.name
+
+class Stock(models.Model):
+    product = models.OneToOneField(Product, on_delete=models.CASCADE, primary_key=True)
+    quantity = models.IntegerField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            CheckConstraint(condition=Q(quantity__gte=0), name='stock_quantity_non_negative')
+        ]
+
+    def __str__(self):
+        return f"Stock for {self.product.name}"
 
 class DeliveryPartner(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

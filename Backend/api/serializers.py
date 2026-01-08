@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Vendor, Product, Address, DeliveryPartner, Order, OrderItem, Payment
+from .models import User, Vendor, Product, Stock, Address, DeliveryPartner, Order, OrderItem, Payment
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -19,13 +19,20 @@ class AddressSerializer(serializers.ModelSerializer):
 class VendorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vendor
-        fields = ['id', 'name', 'city', 'latitude', 'longitude', 'commission_percentage', 'is_active']
+        fields = ['id', 'name', 'city', 'latitude', 'longitude', 'is_active']
+
+class StockSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Stock
+        fields = ['quantity', 'updated_at']
 
 class ProductSerializer(serializers.ModelSerializer):
     vendor = VendorSerializer(read_only=True)
+    stock = StockSerializer(read_only=True)
+    
     class Meta:
         model = Product
-        fields = ['id', 'name', 'category', 'price', 'stock_quantity', 'is_available', 'vendor']
+        fields = ['id', 'name', 'category', 'price', 'stock', 'is_available', 'vendor']
 
 class DeliveryPartnerSerializer(serializers.ModelSerializer):
     class Meta:
@@ -64,25 +71,37 @@ class OrderSerializer(serializers.ModelSerializer):
         # Ensure the user provides an address for the order
         if 'address' not in validated_data:
             raise serializers.ValidationError("Address is required for an order.")
+        
+        user = validated_data.get('user')
+        if not user:
+            raise serializers.ValidationError("User is required.")
+        
         order = Order.objects.create(**validated_data)
         total_amount = 0
+        
         for item_data in items_data:
             try:
                 product = Product.objects.get(id=item_data['product_id'])
             except Product.DoesNotExist:
                 raise serializers.ValidationError(f"Product with id {item_data['product_id']} does not exist.")
+            
+            # Get stock from Stock model (not product)
+            try:
+                stock = Stock.objects.get(product=product)
+            except Stock.DoesNotExist:
+                raise serializers.ValidationError(f"No stock information for {product.name}")
                 
             # Check if there is enough stock
-            if product.stock_quantity < item_data['quantity']:
+            if stock.quantity < item_data['quantity']:
                 raise serializers.ValidationError(f"Not enough stock for {product.name}")
             
             price_at_time = product.price
             order_item = OrderItem.objects.create(order=order, product=product, quantity=item_data['quantity'], price_at_time=price_at_time)
-            total_amount += price_at_time * item_data['quantity']
+            total_amount += float(price_at_time) * item_data['quantity']
 
             # Decrease stock
-            product.stock_quantity -= item_data['quantity']
-            product.save()
+            stock.quantity -= item_data['quantity']
+            stock.save()
 
         order.total_amount = total_amount
         order.save()
